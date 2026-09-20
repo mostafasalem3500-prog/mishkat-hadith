@@ -11,6 +11,8 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 ## Durable product rules
 
 - Never edit, summarize, or fabricate the hadith text, explanation, grading, attribution, or translation; render the HadeethEnc response verbatim.
-- Long content must paginate automatically instead of being clipped or hidden.
+- Long content must split intelligently into no more than two coordinated design pages, preferably at punctuation, instead of being clipped or hidden.
+- Arabic and translated text need independent font, size, alignment, and line-spacing controls.
+- Search may expand user intent with local keywords and synonyms, but every returned hadith must come directly from HadeethEnc.
 - QR codes in exports must be real, scannable links to the selected hadith and language.
 - Imagery must not contain people; preserve the current light, calm visual identity and Arabic-first RTL behavior.
