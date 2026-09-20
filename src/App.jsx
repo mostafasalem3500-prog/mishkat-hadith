@@ -12,6 +12,7 @@ import {
   LinkSimple,
   MagnifyingGlass,
   Palette,
+  Sparkle,
   ShieldCheck,
   SlidersHorizontal,
   Translate,
@@ -72,6 +73,42 @@ const backgrounds = [
   },
 ];
 const rtl = new Set(["ar", "ur", "fa", "ug", "ps", "prs"]);
+const topicSuggestions = [
+  "الصبر",
+  "الصلاة",
+  "الرحمة",
+  "الأخلاق",
+  "النية",
+  "الوالدان",
+  "الدعاء",
+  "الرزق",
+];
+const synonymGroups = [
+  ["القلق", "الخوف", "الحزن", "الهم"],
+  ["الصبر", "الابتلاء", "المصيبة"],
+  ["الرزق", "المال", "الكسب", "العمل"],
+  ["الأخلاق", "الخلق", "المعاملة", "الآداب"],
+  ["الوالدان", "الوالدين", "الأم", "الأب", "البر"],
+  ["الدعاء", "الذكر", "الاستغفار"],
+  ["الصلاة", "الصلوات", "المسجد"],
+];
+const stopWords = new Set([
+  "حديث",
+  "احاديث",
+  "أحاديث",
+  "عن",
+  "في",
+  "من",
+  "إلى",
+  "ما",
+  "ماذا",
+  "قال",
+  "النبي",
+  "الرسول",
+  "حول",
+  "اريد",
+  "أريد",
+]);
 const norm = (d) => ({
   ...d,
   id: String(d.id || sample.id),
@@ -89,20 +126,35 @@ const save = (url, name) => {
   a.href = url;
   a.click();
 };
-function splitText(text, limit) {
-  if (!text) return [""];
-  if (text.length <= limit) return [text];
-  const words = text.split(/\s+/),
-    pages = [];
-  let page = "";
-  for (const word of words) {
-    if ((page + " " + word).trim().length > limit && page) {
-      pages.push(page.trim());
-      page = word;
-    } else page += (page ? " " : "") + word;
+function splitInTwo(text, limit) {
+  if (!text || text.length <= limit) return [text || ""];
+  const middle = Math.floor(text.length / 2),
+    windowSize = Math.min(180, Math.floor(text.length / 4));
+  const candidates = [];
+  for (let i = middle - windowSize; i <= middle + windowSize; i++)
+    if (/[.!؟؛،:\n»]/.test(text[i] || "")) candidates.push(i + 1);
+  let cut = candidates.sort(
+    (a, b) => Math.abs(a - middle) - Math.abs(b - middle),
+  )[0];
+  if (!cut) {
+    cut = text.lastIndexOf(" ", middle);
+    if (cut < middle * 0.65) cut = text.indexOf(" ", middle);
   }
-  if (page) pages.push(page.trim());
-  return pages;
+  return [text.slice(0, cut).trim(), text.slice(cut).trim()].filter(Boolean);
+}
+function intelligentTerms(value) {
+  const cleaned = value.trim().replace(/[؟?!.,،؛:]/g, " ");
+  const words = cleaned
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !stopWords.has(w));
+  const terms = [cleaned, ...words];
+  for (const word of words) {
+    const group = synonymGroups.find((items) =>
+      items.some((item) => word.includes(item) || item.includes(word)),
+    );
+    if (group) terms.push(...group);
+  }
+  return [...new Set(terms.filter(Boolean))].slice(0, 5);
 }
 export function App() {
   const [query, setQuery] = useState(""),
@@ -112,6 +164,8 @@ export function App() {
     [translation, setTranslation] = useState(null),
     [languages, setLanguages] = useState(fallbackLangs),
     [language, setLanguage] = useState("en"),
+    [categories, setCategories] = useState([]),
+    [activeCategory, setActiveCategory] = useState(""),
     [searching, setSearching] = useState(false),
     [loadingTr, setLoadingTr] = useState(false),
     [error, setError] = useState("");
@@ -119,8 +173,13 @@ export function App() {
     [theme, setTheme] = useState("sky"),
     [customBg, setCustomBg] = useState(""),
     [font, setFont] = useState("naskh"),
+    [translationFont, setTranslationFont] = useState("cairo"),
     [fontScale, setFontScale] = useState(100),
     [translationScale, setTranslationScale] = useState(100),
+    [arabicAlign, setArabicAlign] = useState("center"),
+    [translationAlign, setTranslationAlign] = useState("center"),
+    [arabicLine, setArabicLine] = useState(165),
+    [translationLine, setTranslationLine] = useState(150),
     [overlay, setOverlay] = useState(44),
     [showTranslation, setShowTranslation] = useState(true),
     [showExplanation, setShowExplanation] = useState(false),
@@ -133,10 +192,17 @@ export function App() {
     [prefsReady, setPrefsReady] = useState(false);
   const previewRef = useRef(null);
   useEffect(() => {
-    fetch(`${API}/languages/`)
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then(setLanguages)
-      .catch(() => {});
+    Promise.allSettled([
+      fetch(`${API}/languages/`).then((r) =>
+        r.ok ? r.json() : Promise.reject(),
+      ),
+      fetch(`${API}/categories/roots/?language=ar`).then((r) =>
+        r.ok ? r.json() : Promise.reject(),
+      ),
+    ]).then(([langs, cats]) => {
+      if (langs.status === "fulfilled") setLanguages(langs.value);
+      if (cats.status === "fulfilled") setCategories(cats.value);
+    });
   }, []);
   useEffect(() => {
     const controller = new AbortController(),
@@ -150,14 +216,25 @@ export function App() {
         setSearching(true);
         setError("");
         try {
-          let r = await fetch(
-            `${API}/hadeeths/search/?language=ar&phrase=${encodeURIComponent(p)}`,
-            { signal: controller.signal },
+          const responses = await Promise.all(
+            intelligentTerms(p).map((term) =>
+              fetch(
+                `${API}/hadeeths/search/?language=ar&phrase=${encodeURIComponent(term)}`,
+                { signal: controller.signal },
+              ).then((r) => (r.ok ? r.json() : [])),
+            ),
           );
-          if (!r.ok) throw 0;
-          let d = await r.json();
-          d = Array.isArray(d) ? d : d.data || [];
+          const unique = new Map();
+          responses
+            .flatMap((d) => (Array.isArray(d) ? d : d.data || []))
+            .forEach((item) => unique.set(String(item.id), item));
+          let d = [...unique.values()].sort(
+            (a, b) =>
+              Number((b.title || "").includes(p)) -
+              Number((a.title || "").includes(p)),
+          );
           setResults(d);
+          setActiveCategory("");
           setVisible(10);
           if (!d.length)
             setError("لا توجد نتائج مطابقة. جرّب كلمة أقصر أو اسم راوٍ.");
@@ -175,6 +252,28 @@ export function App() {
       controller.abort();
     };
   }, [query]);
+  async function browseCategory(category) {
+    setSearching(true);
+    setError("");
+    setQuery("");
+    setActiveCategory(String(category.id));
+    setVisible(20);
+    try {
+      const r = await fetch(
+        `${API}/hadeeths/list/?language=ar&category_id=${category.id}&page=1&per_page=100`,
+      );
+      if (!r.ok) throw 0;
+      const d = await r.json();
+      setResults(d.data || []);
+      if (!(d.data || []).length)
+        setError("لا توجد نتائج منشورة في هذا الموضوع.");
+    } catch {
+      setError("تعذّر تحميل أحاديث الموضوع الآن.");
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }
   async function choose(item) {
     setSearching(true);
     setTranslation(null);
@@ -227,8 +326,13 @@ export function App() {
         setFormat(p.format || "portrait");
         setTheme(p.theme || "sky");
         setFont(p.font || "naskh");
+        setTranslationFont(p.translationFont || "cairo");
         setFontScale(p.fontScale || 100);
         setTranslationScale(p.translationScale || 100);
+        setArabicAlign(p.arabicAlign || "center");
+        setTranslationAlign(p.translationAlign || "center");
+        setArabicLine(p.arabicLine || 165);
+        setTranslationLine(p.translationLine || 150);
         setOverlay(p.overlay ?? 44);
         setShowTranslation(p.showTranslation ?? true);
         setShowExplanation(p.showExplanation ?? false);
@@ -249,8 +353,13 @@ export function App() {
           format,
           theme,
           font,
+          translationFont,
           fontScale,
           translationScale,
+          arabicAlign,
+          translationAlign,
+          arabicLine,
+          translationLine,
           overlay,
           showTranslation,
           showExplanation,
@@ -264,8 +373,13 @@ export function App() {
     format,
     theme,
     font,
+    translationFont,
     fontScale,
     translationScale,
+    arabicAlign,
+    translationAlign,
+    arabicLine,
+    translationLine,
     overlay,
     showTranslation,
     showExplanation,
@@ -287,22 +401,23 @@ export function App() {
           : format === "square"
             ? 390
             : 310,
-    layerCount =
-      1 +
-      (showTranslation && translation ? 1 : 0) +
-      (showExplanation && hadith.explanation ? 1 : 0),
-    pageLimit = Math.max(170, Math.round((baseLimit / layerCount) * 1.3));
+    totalDesignLength =
+      hadith.hadeeth.length +
+      (showTranslation ? translation?.hadeeth?.length || 0 : 0) +
+      (showExplanation ? hadith.explanation?.length || 0 : 0),
+    shouldSplit = totalDesignLength > baseLimit * 1.3,
+    splitLimit = shouldSplit ? 1 : baseLimit;
   const hadithPages = useMemo(
-      () => splitText(hadith.hadeeth, pageLimit),
-      [hadith.hadeeth, pageLimit],
+      () => splitInTwo(hadith.hadeeth, splitLimit),
+      [hadith.hadeeth, splitLimit],
     ),
     translationPages = useMemo(
-      () => splitText(translation?.hadeeth || "", pageLimit),
-      [translation?.hadeeth, pageLimit],
+      () => splitInTwo(translation?.hadeeth || "", splitLimit),
+      [translation?.hadeeth, splitLimit],
     ),
     explanationPages = useMemo(
-      () => splitText(hadith.explanation || "", pageLimit),
-      [hadith.explanation, pageLimit],
+      () => splitInTwo(hadith.explanation || "", splitLimit),
+      [hadith.explanation, splitLimit],
     ),
     pageCount = Math.max(
       hadithPages.length,
@@ -332,40 +447,68 @@ export function App() {
   const canvasStyle = {
     "--text-fit": (fit * fontScale) / 100,
     "--translation-scale": translationScale / 100,
+    "--arabic-align": arabicAlign,
+    "--translation-align": translationAlign,
+    "--arabic-line": arabicLine / 100,
+    "--translation-line": translationLine / 100,
     "--overlay": overlay / 100,
     backgroundImage: bgUrl
       ? `linear-gradient(rgba(8,25,37,${overlay / 100}),rgba(8,25,37,${Math.min(0.86, overlay / 100 + 0.12)})),url(${bgUrl})`
       : undefined,
   };
+  async function makeExportUrl() {
+    await document.fonts.ready;
+    let o = { pixelRatio: quality, cacheBust: true, backgroundColor: "#fff" },
+      u;
+    if (exportType === "jpg")
+      u = await toJpeg(previewRef.current, { ...o, quality: 0.96 });
+    else if (exportType === "svg") u = await toSvg(previewRef.current, o);
+    else if (exportType === "webp") {
+      let p = await toPng(previewRef.current, o);
+      u = await new Promise((ok, no) => {
+        let i = new Image();
+        i.onload = () => {
+          let c = document.createElement("canvas");
+          c.width = i.width;
+          c.height = i.height;
+          c.getContext("2d").drawImage(i, 0, 0);
+          ok(c.toDataURL("image/webp", 0.96));
+        };
+        i.onerror = no;
+        i.src = p;
+      });
+    } else u = await toPng(previewRef.current, o);
+    return u;
+  }
   async function exportDesign() {
     if (!previewRef.current) return;
     setNotice("جارٍ إنشاء الملف عالي الدقة…");
     try {
-      await document.fonts.ready;
-      let o = { pixelRatio: quality, cacheBust: true, backgroundColor: "#fff" },
-        u;
-      if (exportType === "jpg")
-        u = await toJpeg(previewRef.current, { ...o, quality: 0.96 });
-      else if (exportType === "svg") u = await toSvg(previewRef.current, o);
-      else if (exportType === "webp") {
-        let p = await toPng(previewRef.current, o);
-        u = await new Promise((ok, no) => {
-          let i = new Image();
-          i.onload = () => {
-            let c = document.createElement("canvas");
-            c.width = i.width;
-            c.height = i.height;
-            c.getContext("2d").drawImage(i, 0, 0);
-            ok(c.toDataURL("image/webp", 0.96));
-          };
-          i.onerror = no;
-          i.src = p;
-        });
-      } else u = await toPng(previewRef.current, o);
+      const u = await makeExportUrl();
       save(u, `mishkat-${hadith.id}-${format}-${safePage + 1}.${exportType}`);
       setNotice(`تم تصدير الصفحة ${safePage + 1} من ${pageCount}.`);
     } catch {
       setNotice("تعذّر التصدير؛ استخدم خلفية مدمجة أو صورة من جهازك.");
+    }
+    setTimeout(() => setNotice(""), 4000);
+  }
+  async function exportBothPages() {
+    const original = safePage;
+    setNotice("جارٍ تصدير الصفحتين…");
+    try {
+      for (let index = 0; index < pageCount; index++) {
+        setPage(index);
+        await new Promise((resolve) => setTimeout(resolve, 180));
+        save(
+          await makeExportUrl(),
+          `mishkat-${hadith.id}-${format}-${index + 1}.${exportType}`,
+        );
+      }
+      setPage(original);
+      setNotice("تم تصدير الصفحتين بالترتيب.");
+    } catch {
+      setPage(original);
+      setNotice("تعذّر تصدير الصفحتين؛ حاول مرة أخرى.");
     }
     setTimeout(() => setNotice(""), 4000);
   }
@@ -427,7 +570,9 @@ export function App() {
                 <small>الخطوة 1</small>
                 <h2>ابحث في مكتبة الأحاديث</h2>
               </div>
-              <span>بحث موسّع ومتدرج</span>
+              <span>
+                <Sparkle weight="fill" /> بحث ذكي بالموضوع والمرادفات
+              </span>
             </div>
             <div className="search-line">
               <div className="search-box">
@@ -435,7 +580,7 @@ export function App() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="كلمة من الحديث، الموضوع، أو اسم الراوي…"
+                  placeholder="اسأل: ماذا قال النبي عن الصبر والابتلاء؟"
                 />
                 {query && (
                   <button aria-label="مسح" onClick={() => setQuery("")}>
@@ -444,8 +589,41 @@ export function App() {
                 )}
               </div>
               <button className="filter">
-                <SlidersHorizontal /> بحث موثّق
+                <SlidersHorizontal /> من المصدر فقط
               </button>
+            </div>
+            <div className="smart-search-box">
+              <div className="smart-search-intro">
+                <Sparkle weight="fill" />
+                <span>
+                  <strong>وصول أسرع للحديث</strong>
+                  <small>
+                    اكتب سؤالًا طبيعيًا أو اختر موضوعًا؛ نبحث بالكلمات القريبة
+                    ونزيل التكرار.
+                  </small>
+                </span>
+              </div>
+              <div className="suggestion-chips">
+                {topicSuggestions.map((topic) => (
+                  <button key={topic} onClick={() => setQuery(topic)}>
+                    {topic}
+                  </button>
+                ))}
+              </div>
+              <div className="category-chips" aria-label="التصنيفات الرسمية">
+                {categories.map((category) => (
+                  <button
+                    key={category.id}
+                    className={
+                      activeCategory === String(category.id) ? "active" : ""
+                    }
+                    onClick={() => browseCategory(category)}
+                  >
+                    {category.title}
+                    <small>{category.hadeeths_count}</small>
+                  </button>
+                ))}
+              </div>
             </div>
             {(searching || results.length > 0 || error) && (
               <div className="results-panel">
@@ -594,7 +772,7 @@ export function App() {
             </div>
             <div className={`canvas-wrap ${format}`}>
               <div
-                className={`social-canvas ${bg?.cls || "theme-custom"} font-${font} ${bgUrl ? "photo-bg" : ""}`}
+                className={`social-canvas ${bg?.cls || "theme-custom"} font-${font} translation-font-${translationFont} ${bgUrl ? "photo-bg" : ""}`}
                 style={canvasStyle}
                 ref={previewRef}
               >
@@ -728,6 +906,19 @@ export function App() {
                 />
               </div>
               <div>
+                <label>خط الترجمة</label>
+                <select
+                  value={translationFont}
+                  onChange={(e) => setTranslationFont(e.target.value)}
+                >
+                  {fonts.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label>حجم الترجمة {translationScale}%</label>
                 <input
                   type="range"
@@ -735,6 +926,62 @@ export function App() {
                   max="130"
                   value={translationScale}
                   onChange={(e) => setTranslationScale(+e.target.value)}
+                />
+              </div>
+              <div>
+                <label>محاذاة العربي</label>
+                <div className="align-control">
+                  {[
+                    ["right", "يمين"],
+                    ["center", "وسط"],
+                    ["left", "يسار"],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      className={arabicAlign === value ? "active" : ""}
+                      onClick={() => setArabicAlign(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label>محاذاة الترجمة</label>
+                <div className="align-control">
+                  {[
+                    ["left", "يسار"],
+                    ["center", "وسط"],
+                    ["right", "يمين"],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      className={translationAlign === value ? "active" : ""}
+                      onClick={() => setTranslationAlign(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label>تباعد العربي {arabicLine}%</label>
+                <input
+                  type="range"
+                  min="120"
+                  max="210"
+                  value={arabicLine}
+                  onChange={(e) => setArabicLine(+e.target.value)}
+                />
+              </div>
+              <div>
+                <label>تباعد الترجمة {translationLine}%</label>
+                <input
+                  type="range"
+                  min="110"
+                  max="190"
+                  value={translationLine}
+                  onChange={(e) => setTranslationLine(+e.target.value)}
                 />
               </div>
               <div>
@@ -806,6 +1053,11 @@ export function App() {
               <button onClick={exportDesign}>
                 <DownloadSimple /> تصدير الصفحة {safePage + 1}
               </button>
+              {pageCount === 2 && (
+                <button className="export-both" onClick={exportBothPages}>
+                  <DownloadSimple /> تصدير الصفحتين
+                </button>
+              )}
             </div>
             <p className="integrity">
               <Info /> الإعدادات تُحفظ تلقائيًا، والنص الطويل يُقسّم دون حذف.
