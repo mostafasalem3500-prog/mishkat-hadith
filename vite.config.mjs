@@ -15,5 +15,9 @@ export default defineConfig({
       clientFiles: ["./src/main.jsx"],
     },
   },
+  preview: {
+    host: "0.0.0.0",
+    allowedHosts: ["mishkat-hadith-production.up.railway.app"],
+  },
   plugins: [react()],
 });
