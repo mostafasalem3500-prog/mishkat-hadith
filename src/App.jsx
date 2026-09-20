@@ -209,7 +209,7 @@ export function App() {
       t = setTimeout(async () => {
         let p = query.trim();
         if (p.length < 2) {
-          setResults([]);
+          if (!activeCategory) setResults([]);
           setError("");
           return;
         }
