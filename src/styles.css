@@ -1377,3 +1377,137 @@ details p {
   max-height: none;
   overflow: visible;
 }
+.search-title > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.smart-search-box {
+  margin: -12px 0 20px;
+  padding: 12px;
+  border: 1px solid #dcebea;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f3fbfa, #fff);
+}
+.smart-search-intro {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: #167b7c;
+}
+.smart-search-intro > svg {
+  font-size: 20px;
+}
+.smart-search-intro span strong,
+.smart-search-intro span small {
+  display: block;
+}
+.smart-search-intro span strong {
+  font-size: 11px;
+}
+.smart-search-intro span small {
+  font-size: 8px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.suggestion-chips,
+.category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.suggestion-chips button,
+.category-chips button {
+  border: 1px solid #d5e5e5;
+  background: #fff;
+  color: #37566a;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 8px;
+}
+.suggestion-chips button:hover,
+.category-chips button:hover,
+.category-chips button.active {
+  border-color: #00a7a8;
+  background: #eafaf8;
+  color: #007b7c;
+}
+.category-chips {
+  padding-top: 9px;
+  border-top: 1px solid #e3eeee;
+}
+.category-chips button {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.category-chips button small {
+  background: #edf4f4;
+  border-radius: 999px;
+  padding: 1px 5px;
+  font: 7px system-ui;
+}
+.canvas-body h2 {
+  line-height: var(--arabic-line);
+  text-align: var(--arabic-align);
+}
+.canvas-translation {
+  line-height: var(--translation-line) !important;
+  text-align: var(--translation-align);
+  width: 100%;
+}
+.translation-font-amiri .canvas-translation {
+  font-family: Amiri, "Noto Naskh Arabic", serif;
+}
+.translation-font-naskh .canvas-translation {
+  font-family: "Noto Naskh Arabic", serif;
+}
+.translation-font-kufi .canvas-translation {
+  font-family: "Noto Kufi Arabic", sans-serif;
+}
+.translation-font-cairo .canvas-translation {
+  font-family: Cairo, sans-serif;
+}
+.align-control {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid #dce4e8;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.align-control button {
+  border: 0;
+  border-inline-start: 1px solid #e2e9eb;
+  background: #fff;
+  height: 32px;
+  font-size: 8px;
+}
+.align-control button:first-child {
+  border: 0;
+}
+.align-control button.active {
+  background: #e7fbf9;
+  color: #008486;
+  font-weight: 700;
+}
+.export-bar .export-both {
+  grid-column: 1/-1;
+  background: linear-gradient(135deg, #173f59, #0a6670);
+}
+@media (max-width: 720px) {
+  .smart-search-box {
+    margin-top: -15px;
+  }
+  .category-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .category-chips button {
+    flex: 0 0 auto;
+  }
+  .smart-search-intro span small {
+    line-height: 1.5;
+  }
+}
